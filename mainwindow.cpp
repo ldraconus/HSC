@@ -2,6 +2,9 @@
 #include "ui_mainwindow.h"
 #include "setupdialog.h"
 
+#include "hsccharacter.h"
+#include "../../HSCCU/HSCCU/character.h"
+
 #include <iostream>
 
 #include <QAction>
@@ -12,19 +15,399 @@
 #include <QToolBar>
 #include <QVBoxLayout>
 
+static QString strDamage(int str) {
+    QString dice;
+    dice = QString("%1").arg(str / 5);
+    if (str % 5 > 2) dice += "½";
+    return dice + "d6";
+}
+
+static QString calcKilling(int dc, int str) {
+    int strDC = (str + 2) / 5;
+    int num = (dc + strDC) / 3;
+    int rem = dc % 3;
+    switch (rem) {
+    case 0: return QString("%1d6").arg(num);
+    case 1: return QString("%1d6+1").arg(num);
+    case 2: return QString("%1½d6").arg(num);
+    }
+    return "?";
+}
+
+static int count(QString str, QString what) {
+    auto x = str.split(what);
+    return x.count() - 1;
+}
+
+static int countOpens(QString str) {
+    return count(str, "(");
+}
+
+static int countCloses(QString str) {
+    return count(str, ")");
+}
+
+static QString half(QString x) {
+    if (x == "1/2") return "½";
+            return x;
+}
+
+static QString replace(QString str, QString var, QString val) {
+    QStringList x = str.split(var);
+    if (x.count() == 1) return str;
+    return x[0] + val + x[1];
+}
+
+class hscChar: public Char {
+private:
+    hscCharacter character;
+
+    void    capture(int, QDomNode);
+    void    captureAttr(int, QDomAttr);
+    void    captureNode(int, QDomNode);
+    void    captureData(int, QDomElement);
+    QString handleAdders(const QList<hscCharacter::Adder>&);
+    QString handleList(hscCharacter::List&);
+    QString handleModifiers(const QList<hscCharacter::Modifier>&);
+    QString handleMultiPower(hscCharacter::MultiPower&);
+    QString handlePower(hscCharacter::Power&);
+    QString handleStat(hscCharacter::Stat&);
+    QString handleSubPower(QList<hscCharacter::SubPower>&);
+    QString handleVPP(hscCharacter::VariablePowerPool&);
+    QString indent(int);
+
+    QString calcDamageWithSTR(int dc, bool addStr, bool killing) {
+        QString display;
+        if (!addStr) {
+            if (killing) display = calcKilling(dc, 0) + "K";
+            else display = QString("%1d6").arg(dc);
+        } else {
+            int prim = getPrimary("STR");
+            int sec  = getSecondary("STR") + prim;
+            if (killing) display += calcKilling(dc, prim) + "K";
+            else display += strDamage(dc * 5 + prim);
+            if (sec != prim) {
+                display += "/";
+                if (killing) display += calcKilling(dc, sec) + "K";
+                else display += strDamage(dc * 5 + sec);
+            }
+        }
+        return display;
+    }
+    QString getRoll(const QString& stat, int levels) {
+        QString display;
+        int prim = getPrimary(stat);
+        int sec  = getSecondary(stat) + prim;
+        int primRoll = 9 + (prim + 2) / 5 + levels;
+        int secRoll = 9 + (sec + 2) / 5 + levels;
+        display = QString("%1-").arg(primRoll);
+        if (prim != sec) display += "/" + QString("%1-").arg(secRoll);
+        return display;
+    }
+
+
+public:
+    int         getPrimary(const QString& s)           { return character.getPrimary(s); }
+    int         getPrimaryResistant(const QString s)   { return character.getPrimaryResistant(s); }
+    int         getSecondary(const QString& s)         { return character.getSecondary(s); }
+    int         getSecondaryResistant(const QString s) { return character.getSecondaryResistant(s); }
+    QByteArray  image()                                { return character.image.image; }
+    QString     name()                                 { return character.characterInfo.characterName; }
+
+    QStringList disadvantages() {
+        QStringList disad;
+        for (const auto& complication: character.disadvantages.list) {
+            QString display = complication.attributes["ALIAS"];
+            if (!complication.attributes["INPUT"].isEmpty()) display += ": " + complication.attributes["INPUT"];
+            if (!complication.attributes["NAME"].isEmpty()) display = complication.attributes["NAME"] + ": " + display;
+            display += handleAdders(complication.specials.adders);
+            display += handleModifiers(complication.specials.modifiers);
+            int parens = countOpens(display) - countCloses(display);
+            for (int i = 0; i < parens; ++i) display += ")";
+            disad.append(display);
+        }
+        return disad;
+    }
+    void load(QString f) {
+        QDomDocument chr(f);
+        QFile file(f);
+        if (!file.open(QIODevice::ReadOnly)) return;
+        if (!chr.setContent(&file)) {
+            file.close();
+            return;
+        }
+        file.close();
+    }
+    QStringList martialArts() {
+        QStringList ma;
+        for (const auto& maneuver: character.martialArts.list) {
+            QString display = maneuver.attributes["ALIAS"];
+            if (!maneuver.attributes["INPUT"].isEmpty()) display += ": " + maneuver.attributes["INPUT"];
+            if (!maneuver.attributes["NAME"].isEmpty()) display = maneuver.attributes["NAME"] + ": " + display;
+            display += ": ";
+            if (!maneuver.attributes["PHASE"].isEmpty()) display += half(maneuver.attributes["PHASE"]) + " Phase, ";
+            if (!maneuver.attributes["OCV"].isEmpty()) display += maneuver.attributes["OCV"] + " OCV, ";
+            if (!maneuver.attributes["DCV"].isEmpty()) display += maneuver.attributes["DCV"] + " DCV, ";
+            int dc = maneuver.attributes["DC"].toInt();
+            bool addStr = hscCharacter::Base::Bool(maneuver.attributes["ADDSTR"]);
+            bool useWeapon = hscCharacter::Base::Bool(maneuver.attributes["USEWEAPON"]);
+            if (useWeapon) display += replace(maneuver.attributes["WEAPONEFFECT"], "[WEAPONDC]", calcDamageWithSTR(dc, addStr, useWeapon));
+            else display += replace(maneuver.attributes["EFFECT"], "[NORMALDC]", calcDamageWithSTR(dc, addStr, useWeapon));
+        }
+        return ma;
+    }
+    QStringList perks() {
+        QStringList perks;
+        for (const auto& perk: character.perks.list) {
+            QString display = perk.attributes["ALIAS"];
+            if (!perk.attributes["INPUT"].isEmpty()) display += ": " + perk.attributes["INPUT"];
+            if (!perk.attributes["NAME"].isEmpty()) display = perk.attributes["NAME"] + ": " + display;
+            if (!perk.specials.adders.isEmpty()) {
+                for (const auto& adder: perk.specials.adders) {
+                    if (adder.attributes["OPTION"].toInt() != 0) display += " " + adder.attributes["OPTION_ALIAS"];
+                    else display += " (" +  adder.attributes["OPTION_ALIAS"] + ")";
+                }
+                if (perk.attributes["LEVELS"].toInt() != 0) display += QString(", +%1/+%1d6").arg(perk.attributes["LEVELS"]);
+            }
+            perks.append(display);
+        }
+        return perks;
+    }
+    QStringList powers() {
+        QStringList powers;
+        for (auto& item: character.powers.items) {
+            QString display;
+            hscCharacter::Power* power = std::get_if<hscCharacter::Power>(&item);
+            if (power != nullptr) display = handlePower(*power);
+            else {
+                hscCharacter::Stat* stat = std::get_if<hscCharacter::Stat>(&item);
+                if (stat != nullptr) display = handleStat(*stat);
+                else {
+                    hscCharacter::MultiPower* mp = std::get_if<hscCharacter::MultiPower>(&item);
+                    if (mp != nullptr) display = handleMultiPower(*mp);
+                    else {
+                        hscCharacter::VariablePowerPool* vpp = std::get_if<hscCharacter::VariablePowerPool>(&item);
+                        if (vpp != nullptr) display = handleVPP(*vpp);
+                        else {
+                            hscCharacter::List* list = std::get_if<hscCharacter::List>(&item);
+                            if (list != nullptr) display = handleList(*list);
+                        }
+                    }
+                }
+            }
+            powers.append(display);
+        }
+        return powers;
+    }
+    QStringList skills() {
+        QStringList skills;
+        for (const auto& skill: character.skills.list) {
+            QString display = skill.attributes["ALIAS"];
+            if (!skill.attributes["INPUT"].isEmpty()) display += ": " + skill.attributes["INPUT"];
+            if (!skill.attributes["NAME"].isEmpty()) display = skill.attributes["NAME"] + ": " + display;
+            if (skill.attributes["LEVELSONLY"] == "Yes") display += " +" + skill.attributes["LEVELS"];
+            else if (skill.attributes["FAMILIARITY"] == "Yes") display += " 8-";
+            else if (skill.attributes["PROFICIENCY"] == "Yes") display += " 10-";
+            else if (skill.attributes["CHARACTERISTIC"] == "GENERAL") display += QString(" %1-").arg(11 + skill.attributes["LEVELS"].toInt());
+            else display += " " + getRoll(skill.attributes["CHARACTERISTIC"], skill.attributes["LEVELS"].toInt());
+            skills.append(display);
+        }
+        return skills;
+    }
+    QStringList talents() {
+        QStringList talents;
+        for (const auto& talent: character.talents.list) {
+            QString display = talent.attributes["ALIAS"];
+            if (!talent.attributes["INPUT"].isEmpty()) display += ": " + talent.attributes["INPUT"];
+            if (!talent.attributes["NAME"].isEmpty()) display = talent.attributes["NAME"] + ": " + display;
+            talents.append(display);
+        }
+        return talents;
+    }
+};
+
+class hsccuChar: public Char {
+private:
+    Character character;
+    Option opt;
+
+    int str2idx(QString s) {
+        QMap<QString, int> data { { "STR", 0 }, { "DEX", 1 }, { "CON", 2 }, { "INT", 3 }, { "EGO", 4 }, { "PRE", 5 },
+                                  { "OCV", 6 }, { "DCV", 7 }, { "OMCV", 8 }, { "DMCV", 9 }, { "SPD", 10 },
+                                  { "PD", 11 }, { "ED", 12 }, { "REC", 13 }, { "END", 14 }, { "BODY", 15 }, { "STUN", 16 } };
+        return data[s];
+    }
+
+public:
+    int         getPrimary(const QString& s)   { Characteristic c = character.characteristic(str2idx(s)); return c.base() + c.primary(); }
+    int         getSecondary(const QString& s) { return character.characteristic(str2idx(s)).secondary(); }
+    QByteArray  image()                        { return character.imageData(); }
+    void        load(QString f)                { character.load(opt, f); }
+    QString     name()                         { return character.characterName(); }
+
+    QStringList disadvantages() {
+        QStringList disad;
+        for (const auto& complication: character.complications()) disad.append(complication->description());
+        return disad;
+    }
+    int getPrimaryResistant(const QString s) {
+        if (s == "PD") return character.rPD();
+        else if (s == "ED") return character.rED();
+        return 0;
+    }
+    int getSecondaryResistant(const QString s) {
+        if (s == "PD") return character.temprPD();
+        else if (s == "ED") return character.temprED();
+        return 0;
+    }
+    QStringList martialArts() {
+        QStringList ma;
+        for (const auto& skl: character.skillsTalentsOrPerks()) {
+            if (skl->name() == "Martial Arts") {
+                static QMap<QString, QString> table = {
+                    { "Choke Hold", "½ Phase, -2 OCV, +0 DCV, Grab 1 limb, 2d6 NND" },
+                    { "Defensive Strike", "½ Phase, +1 OCV, +3 DCV, STR strike" },
+                    { "Killing Strike", "½ Phase, -2 OCV, +0 DCV, HKA ½d6" },
+                    { "Legsweep", "½ Phase, +2 OCV, -1 DCV, STR+1d6, target falls" },
+                    { "Martial Block", "½ Phase, +2 OCV, +2 DCV, Block, abort" },
+                    { "Martial Disarm", "½ Phase, -1 OCV, -1 DCV, Disarm, +10 STR" },
+                    { "Martial Dodge", "½ Phase, No OCV, +5 DCV, Dodge, abort" },
+                    { "Martial Escape", "½ Phase, +0 OCV, +0 DCV, +15 STR vs. Grabs" },
+                    { "Martial Grab", "½ Phase, -1 OCV, -1 DCV, Grab 2 Limbs, +10 STR" },
+                    { "Martial Strike", "½ Phase, +0 OCV, +2 DCV, STR+2d6" },
+                    { "Martial Throw", "½ Phase, +0 OCV, +1 DCV, STR+v/10, target falls" },
+                    { "Nerve Strike", "½ Phase, -1 OCV, +1 DCV, 2d6 NND" },
+                    { "Offensive Strike", "½ Phase, -2 OCV, +1 DCV, STR+4d6" },
+                    { "Passing Strike", "½ Phase, +1 OCV, +0 DCV, STR+v/10, full move" },
+                    { "Sacrifice Throw", "½ Phase, +2 OCV, +1 DCV, STR, both fall" }
+                };
+                QString d = skl->description(false).mid(skl->name().length() + 2);
+                auto maneuvers = d.split(", ");
+                for (const auto& m: maneuvers) {
+                    int row = 0;
+                    for (const auto& cell: ma) {
+                        if (cell.startsWith(m)) break;
+                        else row++;
+                    }
+                    if (row == ma.count()) ma.append(m + ", " + table[m]);
+                }
+            }
+        }
+        return ma;
+    }
+    QStringList perks() {
+        QStringList perks;
+        for (const auto& skl: character.skillsTalentsOrPerks()) {
+            if (!skl->isPerk()) continue;
+            perks.append(skl->description());
+        }
+        return perks;
+    }
+    QStringList powers() {
+        QStringList powers;
+        for (const auto& pwr: character.powersOrEquipment()) {
+            powers.append(pwr->description(false));
+            if (pwr->isFramework()) {
+                QString descr;
+                pwr->display(descr);
+                QStringList x = descr.split('\n');
+                for (const auto& d: x) powers.append(d);
+            }
+        }
+        return powers;
+    }
+    QStringList skills() {
+        QStringList skills;
+        for (const auto& skl: character.skillsTalentsOrPerks()) {
+            if (!skl->isSkill()) continue;
+            skills.append(skl->description(true));
+        }
+        return skills;
+    }
+    QStringList talents() {
+        QStringList talents;
+        for (const auto& skl: character.skillsTalentsOrPerks()) {
+            if (!skl->isTalent()) continue;
+            talents.append(skl->description(true));
+        }
+        return talents;
+    }
+};
+
+class simpleChar: public Char {
+private:
+    QString     charName;
+    int         dcv;
+    int         dex;
+    int         dmcv;
+    int         ed;
+    int         ocv;
+    int         omcv;
+    int         pd;
+    int         rEd;
+    int         rPd;
+    int         spd;
+    QStringList empty;
+    QByteArray  none;
+
+public:
+    virtual QStringList disadvantages()                        { return empty; }
+    virtual int         getSecondaryResistant(const QString s) { return getPrimaryResistant(s); }
+    virtual int         getSecondary(const QString& s)         { return getPrimary(s); }
+    virtual QByteArray  image()                                { return none; }
+    virtual QStringList martialArts()                          { return empty; }
+    virtual QString     name()                                 { return charName; }
+    virtual QStringList perks()                                { return empty; }
+    virtual QStringList powers()                               { return empty; }
+    virtual QStringList skills()                               { return empty; }
+    virtual QStringList talents()                              { return empty; }
+
+    virtual int  getPrimary(const QString& s) {
+        if (s == "DCV") return dcv;
+        else if (s == "DEX") return dex;
+        else if (s == "DMCV") return dmcv;
+        else if (s == "ED") return ed;
+        else if (s == "OCV") return ocv;
+        else if (s == "OMCV") return omcv;
+        else if (s == "PD") return pd;
+        else if (s == "SPD") return spd;
+        return 0;
+    }
+    virtual int  getPrimaryResistant(const QString s) {
+        if (s == "PD") return rPd;
+        else if (s == "ED") return rEd;
+        return 0;
+    };
+    virtual void load(QString s) {
+        QStringList data = s.split('\t');
+        charName = data[0];
+        dcv  = data[1].toInt();
+        dex  = data[2].toInt();
+        dmcv = data[3].toInt();
+        ed   = data[4].toInt();
+        ocv  = data[5].toInt();
+        omcv = data[6].toInt();
+        pd   = data[7].toInt();
+        rEd  = data[8].toInt();
+        rPd  = data[9].toInt();
+    }
+};
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
 
-    QAction* loadAction = new QAction("Load");
-    QAction* removeAction = new QAction("Remove");
+    QAction* newAction = new QAction("New");
+    QAction* loadAction = new QAction("Open");
+    QAction* removeAction = new QAction("Delete");
     QAction* startAction = new QAction("Start");
     QAction* nextAction = new QAction("Next");
     QAction* delayAction = new QAction("Delay");
     QAction* setupAction = new QAction("Setup");
 
+    ui->toolBar->addAction(newAction);
     ui->toolBar->addAction(loadAction);
     ui->toolBar->addAction(removeAction);
     ui->toolBar->addAction(startAction);
@@ -32,6 +415,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->toolBar->addAction(delayAction);
     ui->toolBar->addAction(setupAction);
 
+    connect(newAction,    SIGNAL(triggered()), this, SLOT(doNew()));
     connect(loadAction,   SIGNAL(triggered()), this, SLOT(load()));
     connect(removeAction, SIGNAL(triggered()), this, SLOT(remove()));
     connect(startAction,  SIGNAL(triggered()), this, SLOT(start()));
@@ -71,6 +455,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     for (int i = 0; i < ui->speedChart->columnCount(); ++i) ui->speedChart->resizeColumnToContents(i);
     for (int i = 0; i < ui->speedChart->rowCount(); ++i) ui->speedChart->resizeRowToContents(i);
+
+    Modifiers createModifiersTable;
 }
 
 MainWindow::~MainWindow()
@@ -79,25 +465,6 @@ MainWindow::~MainWindow()
 }
 
 // ===[DEBUG]-----------------------------------------------------------
-
-static QString calcKilling(int dc, int str) {
-    int strDC = (str + 2) / 5;
-    int num = (dc + strDC) / 3;
-    int rem = dc % 3;
-    switch (rem) {
-    case 0: return QString("%1d6").arg(num);
-    case 1: return QString("%1d6+1").arg(num);
-    case 2: return QString("%1½d6").arg(num);
-    }
-    return "?";
-}
-
-static QString strDamage(int str) {
-    QString dice;
-    dice = QString("%1").arg(str / 5);
-    if (str % 5 > 2) dice += "½";
-    return dice + "d6";
-}
 
 //====[Message Box]================================================
 
@@ -177,48 +544,27 @@ int MainWindow::Statement(const char* msg) {
 
 //====[ Main Code ]=====================================================
 
-QString MainWindow::calcDamageWithSTR(int dc, bool addStr, bool killing) {
-    QString display;
-    if (!addStr) {
-        if (killing) display = calcKilling(dc, 0) + "K";
-        else display = QString("%1d6").arg(dc);
-    } else {
-        QStringList fields = _displays["STR"]->text().split('\t');
-        QString totals = fields[0];
-        fields = totals.split('/');
-        bool first = true;
-        for (const QString& str: fields) {
-            if (first) first = false;
-            else display += "/";
-            int newStr = str.toInt();
-            if (killing) display += calcKilling(dc, newStr) + "K";
-            else display += strDamage(dc * 5 + newStr);
-        }
-    }
-    return display;
-}
-
-void MainWindow::capture(int ind, QDomNode n) {
+void hscChar::capture(int ind, QDomNode n) {
     while (!n.isNull()) {
         captureNode(ind, n);
         n = n.nextSibling();
     }
 }
 
-void MainWindow::captureAttr(int ind, QDomAttr a) {
-    std::cout << qPrintable(indent(ind)) << qPrintable(tr("|")) << qPrintable(a.name()) << qPrintable(tr(": ")) << qPrintable(a.value()) << std::endl;
+void hscChar::captureAttr(int ind, QDomAttr a) {
+    std::cout << qPrintable(indent(ind)) << qPrintable("|") << qPrintable(a.name()) << qPrintable(": ") << qPrintable(a.value()) << std::endl;
 }
 
-void MainWindow::captureData(int ind, QDomElement elem) {
+void hscChar::captureData(int ind, QDomElement elem) {
     capture(ind, elem.firstChild());
 }
 
-void MainWindow::captureNode(int ind, QDomNode n) {
+void hscChar::captureNode(int ind, QDomNode n) {
     QDomElement e = n.toElement();
     if (!e.isNull()) {
         QString text = (e.tagName() == "CHARACTER_INFO") ? "" : e.text();
         if (text.isEmpty()) std::cout << qPrintable(indent(ind)) << qPrintable(e.tagName()) << std::endl;
-        else std::cout << qPrintable(indent(ind)) << qPrintable(e.tagName()) << qPrintable(tr(": ")) << qPrintable(text) << std::endl;
+        else std::cout << qPrintable(indent(ind)) << qPrintable(e.tagName()) << qPrintable(": ") << qPrintable(text) << std::endl;
         if (e.hasAttributes()) {
             QDomNamedNodeMap named = e.attributes();
             int count = named.length();
@@ -232,12 +578,13 @@ void MainWindow::captureNode(int ind, QDomNode n) {
 }
 
 void MainWindow::displayCharacter(QString name) {
-    Character character = _characters[name];
+    std::shared_ptr<Char> character = _characters[name];
 
-    ui->name->setText(character.characterInfo.characterName);
+    ui->name->setText(character->name());
     QPixmap pixmap;
-    if (!character.image.image.isEmpty()) {
-        pixmap.loadFromData(character.image.image);
+    QByteArray img = character->image();
+    if (!img.isEmpty()) {
+        pixmap.loadFromData(img);
         QPixmap scaled = pixmap.scaledToWidth(ui->image->width());
         QRect rect = ui->image->geometry();
         rect.setHeight(scaled.height());
@@ -284,8 +631,8 @@ bool MainWindow::getNextCharacter(int& current) {
     for (int cur = current + 1; cur != ui->speedChart->rowCount(); ++cur) {
         QString name = ((QLabel*) ui->speedChart->cellWidget(cur, 0))->text();
         name = name.mid(1, name.length() - 2);
-        Character& character = _characters[name];
-        QList<int> segments = phases(character.getPrimary("SPD") + character.getSecondary("SPD"));
+        std::shared_ptr<Char>& character = _characters[name];
+        QList<int> segments = phases(character->getPrimary("SPD") + character->getSecondary("SPD"));
         for (const auto& x: segments) if (x == _segment) {
             current = cur;
             return true;
@@ -298,7 +645,7 @@ bool MainWindow::getNextCharacter(int& current) {
     return false;
 }
 
-QString MainWindow::handleList(Character::List& list) {
+QString hscChar::handleList(hscCharacter::List& list) {
     QString display = list.attributes["ALIAS"];
     if (!list.attributes["INPUT"].isEmpty()) display += ": " + list.attributes["INPUT"];
     if (!list.attributes["NAME"].isEmpty()) display = list.attributes["NAME"] + ": " + display;
@@ -307,7 +654,7 @@ QString MainWindow::handleList(Character::List& list) {
     return display;
 }
 
-QString MainWindow::handleMultiPower(Character::MultiPower& mp) {
+QString hscChar::handleMultiPower(hscCharacter::MultiPower& mp) {
     QString display = mp.attributes["ALIAS"];
     if (!mp.attributes["INPUT"].isEmpty()) display += ": " + mp.attributes["INPUT"];
     if (!mp.attributes["NAME"].isEmpty()) display = mp.attributes["NAME"] + ": " + display;
@@ -316,11 +663,11 @@ QString MainWindow::handleMultiPower(Character::MultiPower& mp) {
     return display;
 }
 
-QString MainWindow::handleAdders(const QList<Character::Adder>& adders) {
+QString hscChar::handleAdders(const QList<hscCharacter::Adder>& adders) {
     QString display;
     for (const auto& adder: adders) {
         bool displayInString = true;
-        if (adder.attributes.find("DISPLAYINSTRING") != adder.attributes.end()) displayInString = Character::Base::Bool(adder.attributes["DISPLAYINSTRING"]);
+        if (adder.attributes.find("DISPLAYINSTRING") != adder.attributes.end()) displayInString = hscCharacter::Base::Bool(adder.attributes["DISPLAYINSTRING"]);
         if (!displayInString) continue;
         if (!display.isEmpty()) display += ", ";
         display += adder.attributes["ALIAS"];
@@ -332,11 +679,11 @@ QString MainWindow::handleAdders(const QList<Character::Adder>& adders) {
     return "; " + display;
 }
 
-QString MainWindow::handleModifiers(const QList<Character::Modifier>& mods) {
+QString hscChar::handleModifiers(const QList<hscCharacter::Modifier>& mods) {
     QString display;
     for (const auto& mod: mods) {
         bool displayInString = true;
-        if (mod.attributes.find("DISPLAYINSTRING") != mod.attributes.end()) displayInString = Character::Base::Bool(mod.attributes["DISPLAYINSTRING"]);
+        if (mod.attributes.find("DISPLAYINSTRING") != mod.attributes.end()) displayInString = hscCharacter::Base::Bool(mod.attributes["DISPLAYINSTRING"]);
         if (!displayInString) continue;
         if (!display.isEmpty()) display += ", ";
         display += mod.attributes["ALIAS"];
@@ -349,7 +696,7 @@ QString MainWindow::handleModifiers(const QList<Character::Modifier>& mods) {
     return "; " + display;
 }
 
-QString MainWindow::handleSubPower(QList<Character::SubPower>& subPowers) {
+QString hscChar::handleSubPower(QList<hscCharacter::SubPower>& subPowers) {
     QString display;
     for (const auto& power: subPowers) {
         QString disp = power.attributes["ALIAS"];
@@ -359,7 +706,7 @@ QString MainWindow::handleSubPower(QList<Character::SubPower>& subPowers) {
         int lvls = power.attributes["LEVELS"].toInt();
         bool dice = power.attributes.find("USESTANDARDEFFECT") != power.attributes.end();
         bool standard = false;
-        if (dice) standard = Character::Base::Bool(power.attributes["USESTANDARDEFFECT"]);
+        if (dice) standard = hscCharacter::Base::Bool(power.attributes["USESTANDARDEFFECT"]);
         QString XMLID = power.attributes["XMLID"];
         bool isMovement = (XMLID == "FLIGHT" || XMLID == "TELEPORT" || XMLID == "SWINGING" || XMLID == "STRETCHING");
         bool isSTR = XMLID == "TELEKINESIS";
@@ -383,14 +730,14 @@ QString MainWindow::handleSubPower(QList<Character::SubPower>& subPowers) {
     return display;
 }
 
-QString MainWindow::handlePower(Character::Power& power) {
+QString hscChar::handlePower(hscCharacter::Power& power) {
     QString display = power.attributes["ALIAS"];
     if (!power.attributes["INPUT"].isEmpty()) display += ": " + power.attributes["INPUT"];
     if (!power.attributes["NAME"].isEmpty()) display = power.attributes["NAME"] + ": " + display;
     int lvls = power.attributes["LEVELS"].toInt();
     bool dice = power.attributes.find("USESTANDARDEFFECT") != power.attributes.end();
     bool standard = false;
-    if (dice) standard = Character::Base::Bool(power.attributes["USESTANDARDEFFECT"]);
+    if (dice) standard = hscCharacter::Base::Bool(power.attributes["USESTANDARDEFFECT"]);
     QString XMLID = power.attributes["XMLID"];
     bool isMovement = (XMLID == "FLIGHT" || XMLID == "TELEPORT" || XMLID == "SWINGING" || XMLID == "STRETCHING");
     bool isSTR = XMLID == "TELEKINESIS";
@@ -420,7 +767,7 @@ QString MainWindow::handlePower(Character::Power& power) {
     return display;
 }
 
-QString MainWindow::handleStat(Character::Stat& stat) {
+QString hscChar::handleStat(hscCharacter::Stat& stat) {
     QString display = stat.attributes["ALIAS"];
     if (!stat.attributes["INPUT"].isEmpty()) display += ": " + stat.attributes["INPUT"];
     if (!stat.attributes["NAME"].isEmpty()) display = stat.attributes["NAME"] + ": " + display;
@@ -431,13 +778,13 @@ QString MainWindow::handleStat(Character::Stat& stat) {
     display += handleModifiers(stat.specials.modifiers);
     if (inSomething) {
         bool inMultipower = stat.attributes.find("ULTRA_SLOT") != stat.attributes.end();
-        if (inMultipower) display = QString("\t%1 ").arg(Character::Base::Bool(stat.attributes["ULTRA_SLOT"]) ? "(f)" : "(m)") + display;
+        if (inMultipower) display = QString("\t%1 ").arg(hscCharacter::Base::Bool(stat.attributes["ULTRA_SLOT"]) ? "(f)" : "(m)") + display;
         else display = "\t" + display;
     }
     return display;
 }
 
-QString MainWindow::handleVPP(Character::VariablePowerPool& vpp) {
+QString hscChar::handleVPP(hscCharacter::VariablePowerPool& vpp) {
     QString display = vpp.attributes["ALIAS"];
     if (!vpp.attributes["INPUT"].isEmpty()) display += ": " + vpp.attributes["INPUT"];
     if (!vpp.attributes["NAME"].isEmpty()) display = vpp.attributes["NAME"] + ": " + display;
@@ -446,70 +793,31 @@ QString MainWindow::handleVPP(Character::VariablePowerPool& vpp) {
     return display;
 }
 
-QString MainWindow::indent(int ind) {
+QString hscChar::indent(int ind) {
     QString str = "";
     for (int i = 0; i < ind; ++i) str += "  ";
     return str;
 }
 
-QString getRoll(const QString& stat, int levels) {
-    QString display;
-    QStringList fields = stat.split('\t');
-    QString rolls = fields[1];
-    fields = rolls.split('/');
-    bool first = true;
-    for (const QString& roll: fields) {
-        if (first) first = false;
-        else display += "/";
-        int newRoll = roll.split('-')[0].toInt() + levels;
-        display += QString("%1-").arg(newRoll);
-    }
-    return display;
-}
-
-static QString half(QString x) {
-    if (x == "1/2") return "½";
-    return x;
-}
-
-static QString replace(QString str, QString var, QString val) {
-    QStringList x = str.split(var);
-    if (x.count() == 1) return str;
-    return x[0] + val + x[1];
-}
-
-static int count(QString str, QString what) {
-    auto x = str.split(what);
-    return x.count() - 1;
-}
-
-static int countOpens(QString str) {
-    return count(str, "(");
-}
-
-static int countCloses(QString str) {
-    return count(str, ")");
-}
-
-QString MainWindow::statToString(Character& character, QString stat, bool m) {
-    int primary = character.getPrimary(stat.toUpper());
-    int secondary = primary + character.getSecondary(stat.toUpper());
+QString MainWindow::statToString(shared_ptr<Char>& character, QString stat, bool m) {
+    int primary = character->getPrimary(stat.toUpper());
+    int secondary = primary + character->getSecondary(stat.toUpper());
     QString display;
     if (primary == secondary) display = QString("%1%2").arg(primary).arg(m ? "m" : "");
     else display = QString("%1%3/%2%3").arg(primary).arg(secondary).arg(m ? "m" : "");
     return display;
 }
 
-void MainWindow::removeChart(Character& character) {
-    int DEX = character.getPrimary("DEX");
-    DEX = DEX + character.getSecondary("DEX");
-    int SPD = character.getPrimary("SPD");
-    SPD = SPD + character.getSecondary("SPD");
+void MainWindow::removeChart(shared_ptr<Char>& character) {
+    int DEX = character->getPrimary("DEX");
+    DEX = DEX + character->getSecondary("DEX");
+    int SPD = character->getPrimary("SPD");
+    SPD = SPD + character->getSecondary("SPD");
 
     QMap<int, QMap<int, QList<QString>>>::const_iterator dex = _chart.constFind(DEX);
     QMap<int, QList<QString>>::const_iterator spd = dex->constFind(SPD);
     QList<QString>::const_iterator name;
-    for (name = spd->begin(); *name != character.characterInfo.characterName; ++name);
+    for (name = spd->begin(); *name != character->name(); ++name);
     _chart[DEX][SPD].erase(name);
     if (_chart[DEX][SPD].isEmpty()) _chart[DEX].erase(spd);
     if (_chart[DEX].isEmpty()) _chart.erase(dex);
@@ -672,7 +980,7 @@ void MainWindow::updateChart() {
             QList<QString>& chars = speeds[spdCount[j - 1]];
             for (int k = 0; k < chars.count(); ++k) {
                 QString name = chars[k];
-                Character& chr = _characters[name];
+                std::shared_ptr<Char>& chr = _characters[name];
                 setCell(row, 0, name);
                 setCell(row, 1, statToString(chr, "DEX"));
                 setCell(row, 2, statToString(chr, "SPD"));
@@ -695,17 +1003,17 @@ void MainWindow::updateChart() {
     for (int i = 0; i < count; ++i) ui->speedChart->resizeRowToContents(i);
 }
 
-void MainWindow::updateChart(Character& character) {
-    int DEX = character.getPrimary("DEX");
-    DEX = DEX + character.getSecondary("DEX");
-    int SPD = character.getPrimary("SPD");
-    SPD = SPD + character.getSecondary("SPD");
+void MainWindow::updateChart(std::shared_ptr<Char>& character) {
+    int DEX = character->getPrimary("DEX");
+    DEX = DEX + character->getSecondary("DEX");
+    int SPD = character->getPrimary("SPD");
+    SPD = SPD + character->getSecondary("SPD");
 
-    _chart[DEX][SPD].append(character.characterInfo.characterName);
+    _chart[DEX][SPD].append(character->name());
     updateChart();
 }
 
-void MainWindow::updateComplications(Character& character) {
+void MainWindow::updateComplications(std::shared_ptr<Char>& character) {
     QGroupBox* complications = ui->complicationBox;
     QLayout* vbox = complications->layout();
     QLayoutItem *child;
@@ -714,24 +1022,17 @@ void MainWindow::updateComplications(Character& character) {
         delete child;
     }
 
-    ui->complicationBox->setHidden(character.disadvantages.list.isEmpty());
-    for (const auto& complication: character.disadvantages.list) {
+    ui->complicationBox->setHidden(character->disadvantages().isEmpty());
+    for (const auto& complication: character->disadvantages()) {
         QLabel* label = new QLabel;
         setFontSize(label, _font);
-        QString display = complication.attributes["ALIAS"];
-        if (!complication.attributes["INPUT"].isEmpty()) display += ": " + complication.attributes["INPUT"];
-        if (!complication.attributes["NAME"].isEmpty()) display = complication.attributes["NAME"] + ": " + display;
-        display += handleAdders(complication.specials.adders);
-        display += handleModifiers(complication.specials.modifiers);
-        int parens = countOpens(display) - countCloses(display);
-        for (int i = 0; i < parens; ++i) display += ")";
         label->setWordWrap(true);
-        label->setText(display);
+        label->setText(complication);
         vbox->addWidget(label);
     }
 }
 
-void MainWindow::updateMartialArts(Character& character) {
+void MainWindow::updateMartialArts(std::shared_ptr<Char>& character) {
     QGroupBox* martialArts = ui->martialArtsBox;
     QLayout* vbox = martialArts->layout();
     QLayoutItem *child;
@@ -740,29 +1041,19 @@ void MainWindow::updateMartialArts(Character& character) {
         delete child;
     }
 
-    ui->martialArtsBox->setHidden(character.martialArts.list.isEmpty());
-    for (const auto& maneuver: character.martialArts.list) {
+    const auto& ma = character->martialArts();
+    ui->martialArtsBox->setHidden(ma.isEmpty());
+    for (const auto& maneuver: ma) {
         QLabel* label = new QLabel;
         setFontSize(label, _font);
-        QString display = maneuver.attributes["ALIAS"];
-        if (!maneuver.attributes["INPUT"].isEmpty()) display += ": " + maneuver.attributes["INPUT"];
-        if (!maneuver.attributes["NAME"].isEmpty()) display = maneuver.attributes["NAME"] + ": " + display;
-        display += ": ";
-        if (!maneuver.attributes["PHASE"].isEmpty()) display += half(maneuver.attributes["PHASE"]) + " Phase, ";
-        if (!maneuver.attributes["OCV"].isEmpty()) display += maneuver.attributes["OCV"] + " OCV, ";
-        if (!maneuver.attributes["DCV"].isEmpty()) display += maneuver.attributes["DCV"] + " DCV, ";
-        int dc = maneuver.attributes["DC"].toInt();
-        bool addStr = Character::Base::Bool(maneuver.attributes["ADDSTR"]);
-        bool useWeapon = Character::Base::Bool(maneuver.attributes["USEWEAPON"]);
-        if (useWeapon) display += replace(maneuver.attributes["WEAPONEFFECT"], "[WEAPONDC]", calcDamageWithSTR(dc, addStr, useWeapon));
-        else display += replace(maneuver.attributes["EFFECT"], "[NORMALDC]", calcDamageWithSTR(dc, addStr, useWeapon));
+        QString display = maneuver;
         label->setWordWrap(true);
         label->setText(display);
         vbox->addWidget(label);
     }
 }
 
-void MainWindow::updatePerks(Character& character) {
+void MainWindow::updatePerks(std::shared_ptr<Char>& character) {
     QGroupBox* perks = ui->perksBox;
     QLayout* vbox = perks->layout();
     QLayoutItem *child;
@@ -771,27 +1062,17 @@ void MainWindow::updatePerks(Character& character) {
         delete child;
     }
 
-    ui->perksBox->setHidden(character.perks.list.isEmpty());
-    for (const auto& perk: character.perks.list) {
+    const auto& prks = character->perks();
+    ui->perksBox->setHidden(prks.isEmpty());
+    for (const auto& perk: prks) {
         QLabel* label = new QLabel;
         setFontSize(label, _font);
-        QString display = perk.attributes["ALIAS"];
-        if (!perk.attributes["INPUT"].isEmpty()) display += ": " + perk.attributes["INPUT"];
-        if (!perk.attributes["NAME"].isEmpty()) display = perk.attributes["NAME"] + ": " + display;
-        if (!perk.specials.adders.isEmpty()) {
-            for (const auto& adder: perk.specials.adders) {
-                if (adder.attributes["OPTION"].toInt() != 0) display += " " + adder.attributes["OPTION_ALIAS"];
-                else display += " (" +  adder.attributes["OPTION_ALIAS"] + ")";
-            }
-            if (perk.attributes["LEVELS"].toInt() != 0) display += QString(", +%1/+%1d6").arg(perk.attributes["LEVELS"]);
-        }
-        label->setWordWrap(true);
-        label->setText(display);
+        label->setText(perk);
         vbox->addWidget(label);
     }
 }
 
-void MainWindow::updatePowers(Character& character) {
+void MainWindow::updatePowers(std::shared_ptr<Char>& character) {
     QGroupBox* powers = ui->powerBox;
     QLayout* vbox = powers->layout();
     QLayoutItem *child;
@@ -800,36 +1081,18 @@ void MainWindow::updatePowers(Character& character) {
         delete child;
     }
 
-    ui->powerBox->setHidden(character.powers.items.isEmpty());
-    for (auto& item: character.powers.items) {
+    const auto& pwrs = character->powers();
+    ui->powerBox->setHidden(pwrs.isEmpty());
+    for (auto& item: pwrs) {
         QLabel* label = new QLabel;
         setFontSize(label, _font);
-        QString display;
-        Character::Power* power = std::get_if<Character::Power>(&item);
-        if (power != nullptr) display = handlePower(*power);
-        else {
-            Character::Stat* stat = std::get_if<Character::Stat>(&item);
-            if (stat != nullptr) display = handleStat(*stat);
-            else {
-                Character::MultiPower* mp = std::get_if<Character::MultiPower>(&item);
-                if (mp != nullptr) display = handleMultiPower(*mp);
-                else {
-                    Character::VariablePowerPool* vpp = std::get_if<Character::VariablePowerPool>(&item);
-                    if (vpp != nullptr) display = handleVPP(*vpp);
-                    else {
-                        Character::List* list = std::get_if<Character::List>(&item);
-                        if (list != nullptr) display = handleList(*list);
-                    }
-                }
-            }
-        }
         label->setWordWrap(true);
-        label->setText(display);        
+        label->setText(item);
         vbox->addWidget(label);
     }
 }
 
-void MainWindow::updateSkills(Character& character) {
+void MainWindow::updateSkills(std::shared_ptr<Char>& character) {
     QGroupBox* skills = ui->skillBox;
     QLayout* vbox = skills->layout();
     QLayoutItem *child;
@@ -838,25 +1101,18 @@ void MainWindow::updateSkills(Character& character) {
         delete child;
     }
 
-    ui->skillBox->setHidden(character.skills.list.isEmpty());
-    for (const auto& skill: character.skills.list) {
+    const auto& skls = character->skills();
+    ui->skillBox->setHidden(skls.isEmpty());
+    for (const auto& skill: skls) {
         QLabel* label = new QLabel;
         setFontSize(label, _font);
-        QString display = skill.attributes["ALIAS"];
-        if (!skill.attributes["INPUT"].isEmpty()) display += ": " + skill.attributes["INPUT"];
-        if (!skill.attributes["NAME"].isEmpty()) display = skill.attributes["NAME"] + ": " + display;
-        if (skill.attributes["LEVELSONLY"] == "Yes") display += " +" + skill.attributes["LEVELS"];
-        else if (skill.attributes["FAMILIARITY"] == "Yes") display += " 8-";
-        else if (skill.attributes["PROFICIENCY"] == "Yes") display += " 10-";
-        else if (skill.attributes["CHARACTERISTIC"] == "GENERAL") display += QString(" %1-").arg(11 + skill.attributes["LEVELS"].toInt());
-        else display += " " + getRoll(_displays[skill.attributes["CHARACTERISTIC"]]->text(), skill.attributes["LEVELS"].toInt());
         label->setWordWrap(true);
-        label->setText(display);
+        label->setText(skill);
         vbox->addWidget(label);
     }
 }
 
-void MainWindow::updateStats(Character& character) {
+void MainWindow::updateStats(std::shared_ptr<Char>& character) {
     QList<QString> stats {
         "STR", "DEX", "CON", "INT", "EGO", "PRE", "OCV", "DCV", "OMCV", "DMCV", "SPD",
         "PD", "ED", "REC", "END", "BODY", "STUN", "Running", "Swimming", "Leaping"
@@ -865,8 +1121,8 @@ void MainWindow::updateStats(Character& character) {
     int count = 0;
     for (const auto& stat: stats) {
         QString display = statToString(character, stat, count > 16);
-        int primary = character.getPrimary(stat.toUpper());
-        int secondary = primary + character.getSecondary(stat.toUpper());
+        int primary = character->getPrimary(stat.toUpper());
+        int secondary = primary + character->getSecondary(stat.toUpper());
         if (count < 6) {
             if (primary == secondary) display += QString("\t%1-").arg(9 + (primary + 2) / 5);
             else display += QString("\t%1-/%2-").arg(9 + (primary + 2) / 5).arg(9 + (secondary + 2) / 5);
@@ -884,8 +1140,8 @@ void MainWindow::updateStats(Character& character) {
             if (primary == secondary) display += QString("\tPhases: %1").arg(strPhases(primary));
             else display += QString("\tPhases: %1/%2").arg(strPhases(primary), strPhases(secondary));
         } else if (stat == "PD" || stat == "ED") {
-            if (primary == secondary) display += QString("\t%1 " + stat + " (%2 rPD)").arg(primary).arg(character.getPrimaryResistant(stat));
-            else display += QString("\t%1/%2 " + stat + " (%3/%4 rPD)").arg(primary).arg(secondary).arg(character.getPrimaryResistant(stat)).arg(character.getSecondaryResistant(stat));
+            if (primary == secondary) display += QString("\t%1 " + stat + " (%2 rPD)").arg(primary).arg(character->getPrimaryResistant(stat));
+            else display += QString("\t%1/%2 " + stat + " (%3/%4 rPD)").arg(primary).arg(secondary).arg(character->getPrimaryResistant(stat)).arg(character->getSecondaryResistant(stat));
         } else if (stat == "Running") {
             if (primary == secondary) display += QString("\tEND [%1]").arg((primary + 4) / 10);
             else display += QString("\tEND[%1/%2]").arg((primary + 4) / 10).arg((secondary + 4) / 10);
@@ -902,7 +1158,7 @@ void MainWindow::updateStats(Character& character) {
     }
 }
 
-void MainWindow::updateTalents(Character& character) {
+void MainWindow::updateTalents(std::shared_ptr<Char>& character) {
     QGroupBox* talents = ui->talentBox;
     QLayout* vbox = talents->layout();
     QLayoutItem *child;
@@ -911,15 +1167,13 @@ void MainWindow::updateTalents(Character& character) {
         delete child;
     }
 
-    ui->talentBox->setHidden(character.talents.list.isEmpty());
-    for (const auto& talent: character.talents.list) {
+    const auto& tlnts = character->talents();
+    ui->talentBox->setHidden(tlnts.isEmpty());
+    for (const auto& talent: tlnts) {
         QLabel* label = new QLabel;
         setFontSize(label, _font);
-        QString display = talent.attributes["ALIAS"];
-        if (!talent.attributes["INPUT"].isEmpty()) display += ": " + talent.attributes["INPUT"];
-        if (!talent.attributes["NAME"].isEmpty()) display = talent.attributes["NAME"] + ": " + display;
         label->setWordWrap(true);
-        label->setText(display);
+        label->setText(talent);
         vbox->addWidget(label);
     }
 }
@@ -942,9 +1196,9 @@ void MainWindow::delay() {
         auto x = _delayed.constFind(name);
         _delayed.erase(x);
     } else {
-        Character character = _characters[name];
-        int SPD = character.getPrimary("SPD");
-        SPD = SPD + character.getSecondary("SPD");
+        const auto& character = _characters[name];
+        int SPD = character->getPrimary("SPD");
+        SPD = SPD + character->getSecondary("SPD");
         QList<bool> spd = chart(SPD);
         int seg = _segment;
         if (seg == 12) seg = 0;
@@ -969,6 +1223,10 @@ void MainWindow::delay() {
     setSegment(_segment);
 }
 
+void MainWindow::doNew() {
+    //
+}
+
 void MainWindow::itemSelected() {
     int row = selectedRow();
     if (row == -1) return;
@@ -979,22 +1237,15 @@ void MainWindow::itemSelected() {
 }
 
 void MainWindow::load() {
-    QString filename = QFileDialog::getOpenFileName(nullptr, tr("Import HDC file"), QString(), tr("Hero System Characters (*.hdc)"));
+    QString filename = QFileDialog::getOpenFileName(nullptr, tr("Import Character file"), QString(), tr("Hero System Characters (*.hdc *.hsccu)"));
     if (filename.isEmpty()) return;
 
-    QDomDocument chr(filename);
-    QFile file(filename);
-    if (!file.open(QIODevice::ReadOnly)) return;
-    if (!chr.setContent(&file)) {
-        file.close();
-        return;
-    }
-    file.close();
+    std::shared_ptr<Char> character;
+    if (filename.endsWith(".hsc")) character = make_shared<hscChar>();
+    else character = make_shared<hsccuChar>();
+    character->load(filename);
 
-    Character character;
-    character.load(chr);
-
-    QString name = character.characterInfo.characterName;
+    QString name = character->name();
     if (_characters.find(name) != _characters.end()) return;
 
     _characters[name] = character;
@@ -1039,8 +1290,8 @@ void MainWindow::remove() {
 
     QString name = ((QLabel*) ui->speedChart->cellWidget(row, 0))->text();
     name = name.mid(1, name.length() - 2);
-    Character character = _characters[name];
-    QMap<QString, Character>::const_iterator chr = _characters.constFind(name);
+    auto& character = _characters[name];
+    QMap<QString, std::shared_ptr<Char>>::const_iterator chr = _characters.constFind(name);
     _characters.erase(chr);
     auto range = ui->speedChart->selectedRanges();
     if (!range.isEmpty()) ui->speedChart->setRangeSelected(range[0], false);

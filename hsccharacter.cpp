@@ -1,10 +1,10 @@
-#include "character.h"
+#include "hsccharacter.h"
 
-Character::Character() {
+hscCharacter::hscCharacter() {
 
 }
 
-void Character::load(QDomDocument& xml) {
+void hscCharacter::load(QDomDocument& xml) {
     basicConfiguration.load(xml);
          characterInfo.load(xml);
        characteristics.load(xml);
@@ -18,7 +18,7 @@ void Character::load(QDomDocument& xml) {
                  image.load(xml);
 }
 
-void Character::BasicConfiguration::load(QDomDocument& xml) {
+void hscCharacter::BasicConfiguration::load(QDomDocument& xml) {
     QDomElement chr = xml.firstChildElement("CHARACTER");
     QDomElement conf = chr.firstChildElement("BASIC_CONFIGURATION");
 
@@ -27,7 +27,7 @@ void Character::BasicConfiguration::load(QDomDocument& xml) {
     disadPoints = conf.attribute("DISAD_POINTS");
 }
 
-void Character::CharacterInfo::load(QDomDocument& xml) {
+void hscCharacter::CharacterInfo::load(QDomDocument& xml) {
     QDomElement chr = xml.firstChildElement("CHARACTER");
     QDomElement conf = chr.firstChildElement("CHARACTER_INFO");
 
@@ -50,7 +50,7 @@ void Character::CharacterInfo::load(QDomDocument& xml) {
     weight              = conf.attribute("WEIGHT");
 }
 
-void Character::Base::load(QDomElement& e) {
+void hscCharacter::Base::load(QDomElement& e) {
     auto nodes = e.attributes();
     int count = nodes.count();
     for (int i = 0; i < count; ++i) {
@@ -61,7 +61,7 @@ void Character::Base::load(QDomElement& e) {
     attributes["NOTES"] = e.firstChildElement("NOTES").text();
 }
 
-int Character::getPrimary(const QString& stat) {
+int hscCharacter::getPrimary(const QString& stat) {
     QMap<QString, int> base {
         { "STR", 10 }, { "DEX", 10 }, { "CON", 10 }, { "INT", 10 }, { "EGO", 10 }, { "PRE", 10 }, { "OCV", 3 }, { "DCV", 3 }, { "OMCV", 3 }, { "DMCV", 3 },
         { "SPD", 2 }, { "PD", 2 }, { "ED", 2 }, { "REC", 4 }, { "END", 20 }, { "BODY", 10 }, { "STUN", 20 }, { "RUNNING", 12 }, { "SWIMMING", 4 }, { "LEAPING", 4 }
@@ -74,7 +74,7 @@ int Character::getPrimary(const QString& stat) {
     return level;
 }
 
-int Character::getSecondary(const QString& stat) {
+int hscCharacter::getSecondary(const QString& stat) {
     int level = powers.getSecondaries(stat);
     if (stat == "PD" || stat == "ED") {
         level += talents.getSecondaries("COMBAT_LUCK");
@@ -83,21 +83,21 @@ int Character::getSecondary(const QString& stat) {
     return level;
 }
 
-int Character::getPrimaryResistant(const QString& stat) {
+int hscCharacter::getPrimaryResistant(const QString& stat) {
     int level = 0;
     level += talents.getPrimaries("COMBAT_LUCK");
     level += powers.getPrimaries("FORCEFIELD", stat);
     return level;
 }
 
-int Character::getSecondaryResistant(const QString& stat) {
+int hscCharacter::getSecondaryResistant(const QString& stat) {
     int level = 0;
     level += talents.getSecondaries("COMBAT_LUCK");
     level += powers.getSecondaries("FORCEFIELD", stat);
     return level;
 }
 
-int Character::Talents::getPrimaries(const QString& statName) {
+int hscCharacter::Talents::getPrimaries(const QString& statName) {
     int primary = 0;
     for (const auto& talent: list) {
         if (talent.attributes["XMLID"] == statName) {
@@ -108,7 +108,7 @@ int Character::Talents::getPrimaries(const QString& statName) {
     return primary;
 }
 
-int Character::Talents::getSecondaries(const QString& statName) {
+int hscCharacter::Talents::getSecondaries(const QString& statName) {
     int secondary = 0;
     for (const auto& talent: list) {
         if (talent.attributes["XMLID"] == statName) {
@@ -119,7 +119,7 @@ int Character::Talents::getSecondaries(const QString& statName) {
     return secondary;
 }
 
-int Character::Powers::getPrimaries(const QString& statName) {
+int hscCharacter::Powers::getPrimaries(const QString& statName) {
     int primary = 0;
     for (auto& power: items) {
         Stat* stat = std::get_if<Stat>(&power);
@@ -132,7 +132,7 @@ int Character::Powers::getPrimaries(const QString& statName) {
     return primary;
 }
 
-int Character::Powers::getSecondaries(const QString& statName) {
+int hscCharacter::Powers::getSecondaries(const QString& statName) {
     int secondary = 0;
     for (auto& power: items) {
         Stat* stat = std::get_if<Stat>(&power);
@@ -145,7 +145,7 @@ int Character::Powers::getSecondaries(const QString& statName) {
     return secondary;
 }
 
-int Character::Powers::getPrimaries(const QString& powerName, const QString& where) {
+int hscCharacter::Powers::getPrimaries(const QString& powerName, const QString& where) {
     int primary = 0;
     for (auto& power: items) {
         Power* pwr = std::get_if<Power>(&power);
@@ -158,7 +158,7 @@ int Character::Powers::getPrimaries(const QString& powerName, const QString& whe
     return primary;
 }
 
-int Character::Powers::getSecondaries(const QString& powerName, const QString& where) {
+int hscCharacter::Powers::getSecondaries(const QString& powerName, const QString& where) {
     int secondary = 0;
     for (auto& power: items) {
         Power* pwr = std::get_if<Power>(&power);

@@ -1,8 +1,6 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include "character.h"
-
 #include <QDomDocument>
 #include <QMainWindow>
 #include <QMessageBox>
@@ -13,6 +11,23 @@ namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
 #include <QLabel>
+
+class Char {
+public:
+    virtual QStringList disadvantages() = 0;
+    virtual int         getPrimary(const QString&) = 0;
+    virtual int         getPrimaryResistant(const QString s) = 0;
+    virtual int         getSecondary(const QString&) = 0;
+    virtual int         getSecondaryResistant(const QString s) = 0;
+    virtual QByteArray  image() = 0;
+    virtual void        load(QString) = 0;
+    virtual QStringList martialArts() = 0;
+    virtual QString     name() = 0;
+    virtual QStringList perks() = 0;
+    virtual QStringList powers() = 0;
+    virtual QStringList skills() = 0;
+    virtual QStringList talents() = 0;
+};
 
 class MainWindow : public QMainWindow
 {
@@ -28,44 +43,31 @@ public:
     int     Statement(const char*);
     int     YesNo(const char*, const char*);
     int     YesNoCancel(const char*, const char*);
-    QString calcDamageWithSTR(int, bool, bool);
-    void    capture(int, QDomNode);
-    void    captureAttr(int, QDomAttr);
-    void    captureNode(int, QDomNode);
-    void    captureData(int, QDomElement);
     void    displayCharacter(QString);
     bool    getNextCharacter(int& current);
-    QString handleAdders(const QList<Character::Adder>&);
-    QString handleList(Character::List&);
-    QString handleModifiers(const QList<Character::Modifier>&);
-    QString handleMultiPower(Character::MultiPower&);
-    QString handlePower(Character::Power&);
-    QString handleStat(Character::Stat&);
-    QString handleSubPower(QList<Character::SubPower>&);
-    QString handleVPP(Character::VariablePowerPool&);
-    QString indent(int);
-    void    removeChart(Character&);
+    void    removeChart(std::shared_ptr<Char>&);
     int     selectedRow();
     void    setCell(int row, int col, QString str);
     void    setChildrenFontSize(QObjectList children, int s);
     void    setCurrent(int);
     void    setFontSize(QWidget*, int size);
     void    setSegment(int, bool x = false);
-    QString statToString(Character& chr, QString stat, bool m = false);
+    QString statToString(std::shared_ptr<Char>& chr, QString stat, bool m = false);
     void    updateChart();
-    void    updateChart(Character&);
-    void    updateComplications(Character&);
-    void    updateMartialArts(Character&);
-    void    updatePerks(Character&);
-    void    updatePowers(Character&);
-    void    updateSkills(Character&);
-    void    updateStats(Character&);
-    void    updateTalents(Character&);
+    void    updateChart(std::shared_ptr<Char>&);
+    void    updateComplications(std::shared_ptr<Char>&);
+    void    updateMartialArts(std::shared_ptr<Char>&);
+    void    updatePerks(std::shared_ptr<Char>&);
+    void    updatePowers(std::shared_ptr<Char>&);
+    void    updateSkills(std::shared_ptr<Char>&);
+    void    updateStats(std::shared_ptr<Char>&);
+    void    updateTalents(std::shared_ptr<Char>&);
 
     void keyReleaseEvent(QKeyEvent* e) override;
 
 public slots:
     void delay();
+    void doNew();
     void itemSelected();
     void load();
     void next();
@@ -84,7 +86,7 @@ private:
     QRect _yesnocancel { -1, -1, 0, 0 };
 
     //   NAME
-    QMap<QString, Character>             _characters;
+    QMap<QString, std::shared_ptr<Char>> _characters;
     //   DEX       SPD        NAME
     QMap<int, QMap<int, QList<QString>>> _chart;
     //   LABEL

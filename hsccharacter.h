@@ -1,5 +1,5 @@
-#ifndef CHARACTER_H
-#define CHARACTER_H
+#ifndef HSCCHARACTER_H
+#define HSCCHARACTER_H
 
 #include <QColor>
 #include <QDomDocument>
@@ -8,10 +8,10 @@
 
 #include <variant>
 
-class Character
+class hscCharacter
 {
 public:
-    Character();
+    hscCharacter();
 
     void load(QDomDocument&);
 
@@ -463,4 +463,4 @@ public:
     int getSecondaryResistant(const QString& stat);
 };
 
-#endif // CHARACTER_H
+#endif // HSCCHARACTER_H
