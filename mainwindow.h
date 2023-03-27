@@ -21,6 +21,7 @@ public:
     virtual int         getSecondaryResistant(const QString s) = 0;
     virtual QByteArray  image() = 0;
     virtual void        load(QString) = 0;
+    virtual QString     path() = 0;
     virtual QStringList martialArts() = 0;
     virtual QString     name() = 0;
     virtual QStringList perks() = 0;
@@ -68,6 +69,7 @@ public:
     void    updateTalents(std::shared_ptr<Char>&);
 
     void keyReleaseEvent(QKeyEvent* e) override;
+    void load(std::shared_ptr<Char>&, QString);
 
 public slots:
     void delay();
@@ -76,11 +78,15 @@ public slots:
     void load();
     void next();
     void remove();
+#ifndef __wasm__
+    void save();
+#endif
     void setup();
     void start();
 
 private:
     Ui::MainWindow *ui;
+    QString _dir;
 
     QRect _ok          { -1, -1, 0, 0 };
     QRect _okcancel    { -1, -1, 0, 0 };

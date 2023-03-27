@@ -2,7 +2,7 @@ QT       += core gui xml printsupport
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-CONFIG += c++20
+CONFIG += c++21
 
 RC_ICONS = HeroSystem.ico
 

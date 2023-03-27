@@ -16,6 +16,7 @@ public:
     ~SetupDialog();
 
     int size();
+
 private:
     Ui::SetupDialog *ui;
 };

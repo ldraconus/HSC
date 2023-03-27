@@ -30,6 +30,7 @@ public:
     virtual QStringList powers()                             { return empty; }
     virtual QStringList skills()                             { return empty; }
     virtual QStringList talents()                            { return empty; }
+    virtual QString     path()                               { return ""; }
 
     virtual int  getPrimary(const QString& s) {
         if (s == "DCV") return dcv;
@@ -48,7 +49,7 @@ public:
         return 0;
     };
     virtual void load(QString s) {
-        QStringList data = s.split('\t');
+        QStringList data = s.split(',');
         charName = data[0];
         dcv  = data[1].toInt();
         dex  = data[2].toInt();
@@ -80,10 +81,10 @@ SimpleDialog::~SimpleDialog()
 void SimpleDialog::ok() {
     std::shared_ptr<Char> character;
     character = std::make_shared<simpleChar>();
-    QString description = ui->name->text() + "\t" + ui->dcv->text() + "\t" + ui->dex->text() + "\t" +
-                          ui->dmcv->text() + "\t" + ui->ed->text()  + "\t" + ui->ocv->text() + "\t" +
-                          ui->omcv->text() + "\t" + ui->pd->text()  + "\t" + ui->rEd->text() + "\t" +
-                          ui->rPd->text()  + "\t" + ui->spd->text();
+    QString description = ui->name->text() + "," + ui->dcv->text() + "," + ui->dex->text() + "," +
+                          ui->dmcv->text() + "," + ui->ed->text()  + "," + ui->ocv->text() + "," +
+                          ui->omcv->text() + "," + ui->pd->text()  + "," + ui->rEd->text() + "," +
+                          ui->rPd->text()  + "," + ui->spd->text();
     character->load(description);
 
     QString name = character->name();
@@ -94,3 +95,5 @@ void SimpleDialog::ok() {
     MainWindow::ref->updateChart(character);
     MainWindow::ref->displayCharacter(name);
 }
+
+std::shared_ptr<class Char> Sinpleload(QJsonObject&);

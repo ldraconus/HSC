@@ -14,6 +14,7 @@
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QScrollArea>
+#include <QStandardPaths>
 #include <QToolBar>
 #include <QVBoxLayout>
 
@@ -65,6 +66,7 @@ static QString replace(QString str, QString var, QString val) {
 class hscChar: public Char {
 private:
     hscCharacter character;
+    QString      _path;
 
     void    capture(int, QDomNode);
     void    captureAttr(int, QDomAttr);
@@ -112,12 +114,13 @@ private:
 
 
 public:
-    int         getPrimary(const QString& s)           { return character.getPrimary(s); }
-    int         getPrimaryResistant(const QString s)   { return character.getPrimaryResistant(s); }
-    int         getSecondary(const QString& s)         { return character.getSecondary(s); }
-    int         getSecondaryResistant(const QString s) { return character.getSecondaryResistant(s); }
-    QByteArray  image()                                { return character.image.image; }
-    QString     name()                                 { return character.characterInfo.characterName; }
+    int        getPrimary(const QString& s)           { return character.getPrimary(s); }
+    int        getPrimaryResistant(const QString s)   { return character.getPrimaryResistant(s); }
+    int        getSecondary(const QString& s)         { return character.getSecondary(s); }
+    int        getSecondaryResistant(const QString s) { return character.getSecondaryResistant(s); }
+    QByteArray image()                                { return character.image.image; }
+    QString    name()                                 { return character.characterInfo.characterName; }
+    QString    path()                                 { return _path; }
 
     QStringList disadvantages() {
         QStringList disad;
@@ -135,6 +138,7 @@ public:
     }
 
     void load(QString f) {
+        _path = f;
         QDomDocument chr(f);
         QFile file(f);
         if (!file.open(QIODevice::ReadOnly)) return;
@@ -240,6 +244,7 @@ public:
 class hsccuChar: public Char {
 private:
     Character character;
+    QString _path;
     Option opt;
 
     int str2idx(QString s) {
@@ -250,8 +255,9 @@ private:
     }
 
 public:
-    QByteArray  image()                        { return character.imageData(); }
-    QString     name()                         { return character.characterName(); }
+    QByteArray  image() { return character.imageData(); }
+    QString     name()  { return character.characterName(); }
+    QString     path()  { return _path; }
 
     QStringList disadvantages() {
         QStringList disad;
@@ -286,6 +292,7 @@ public:
     }
 
     void load(QString f) {
+        _path = f;
         character.load(opt, f);
         rebuildCharacter(character);
     }
@@ -525,8 +532,13 @@ MainWindow::MainWindow(QWidget *parent)
 
     ref = this;
 
+    _dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+
     QAction* newAction = new QAction("New");
     QAction* loadAction = new QAction("Open");
+#ifndef __wasm__
+    QAction* saveAction = new QAction("Save");
+#endif
     QAction* removeAction = new QAction("Delete");
     QAction* startAction = new QAction("Start");
     QAction* nextAction = new QAction("Next");
@@ -535,6 +547,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->toolBar->addAction(newAction);
     ui->toolBar->addAction(loadAction);
+#ifndef __wasm__
+    ui->toolBar->addAction(saveAction);
+#endif
     ui->toolBar->addAction(removeAction);
     ui->toolBar->addAction(startAction);
     ui->toolBar->addAction(nextAction);
@@ -543,6 +558,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(newAction,    SIGNAL(triggered()), this, SLOT(doNew()));
     connect(loadAction,   SIGNAL(triggered()), this, SLOT(load()));
+#ifndef __wasm__
+    connect(saveAction,   SIGNAL(triggered()), this, SLOT(save()));
+#endif
     connect(removeAction, SIGNAL(triggered()), this, SLOT(remove()));
     connect(startAction,  SIGNAL(triggered()), this, SLOT(start()));
     connect(nextAction,   SIGNAL(triggered()), this, SLOT(next()));
@@ -1363,13 +1381,7 @@ void MainWindow::itemSelected() {
     displayCharacter(name);
 }
 
-void MainWindow::load() {
-    QString filename = QFileDialog::getOpenFileName(nullptr, tr("Import Character file"), QString(), tr("Hero System Characters (*.hdc *.hsccu)"));
-    if (filename.isEmpty()) return;
-
-    std::shared_ptr<Char> character;
-    if (filename.endsWith(".hsc")) character = make_shared<hscChar>();
-    else character = make_shared<hsccuChar>();
+void MainWindow::load(std::shared_ptr<Char>& character, QString filename) {
     character->load(filename);
 
     QString name = character->name();
@@ -1378,6 +1390,27 @@ void MainWindow::load() {
     _characters[name] = character;
     updateChart(character);
     displayCharacter(name);
+}
+
+void MainWindow::load() {
+#ifdef __wasm__
+    QString filename = QFileDialog::getOpenFileName(this, tr("Import Character file"), QString(), tr("Hero System Characters (*.hdc *.hsccu)"));
+    if (filename.isEmpty()) return;
+#else
+    QStringList files = QFileDialog::getOpenFileNames(this, "Import Character file(s)", _dir, "Hero System Character(s) (*.hdc *.hsccu *.hsc)");
+    if (files.isEmpty()) return;
+    for (const auto& filename: files) {
+#endif
+        std::shared_ptr<Char> character;
+        if (filename.endsWith(".hdc")) character = make_shared<hscChar>();
+        else if (filename.endsWith(".hsscu")) character = make_shared<hsccuChar>();
+        else {
+            continue;
+        }
+        load(character, filename);
+#ifndef __wasm__
+    }
+#endif
 }
 
 void MainWindow::next() {
@@ -1424,6 +1457,16 @@ void MainWindow::remove() {
     if (!range.isEmpty()) ui->speedChart->setRangeSelected(range[0], false);
     removeChart(character);
 }
+
+#ifndef __wasm__
+void MainWindow::save() {
+    // get a save file from the user
+    // go through all of the characters:
+    //   write the path for characters that have a non-empty one
+    //   else write the simple character to the save-file
+    // success!!
+}
+#endif
 
 void MainWindow::setup() {
     _font = ui->BODYLabel->font().pointSize();
