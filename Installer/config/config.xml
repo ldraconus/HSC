@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Installer>
+    <Name>HeroSystem SpeedChart</Name>
+    <Version>1.0.0</Version>
+    <Title>HeroSystem SpeedChart Installer</Title>
+    <Publisher>SoftwareOnHand</Publisher>
+    <StartMenuDir>HeroSystem SpeedChart</StartMenuDir>
+    <TargetDir>@ApplicationsDirX64@/HeroSystem-SpeedChart</TargetDir>
+        <RunProgram>@TargetDir@/HeroSystem SpeedChart</RunProgram>
+        <RunProgramDescription>Run "HeroSystem SpeedChart"</RunProgramDescription>
+</Installer>

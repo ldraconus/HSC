@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package>
+    <DisplayName>HeroSystem SpeedChart Executable</DisplayName>
+    <Description>Install the Hero Speed Chart</Description>
+    <Version>1.1.0</Version>
+    <ReleaseDate>2022-10-29</ReleaseDate>
+    <Licenses>
+        <License name="MIT Public License Agreement" file="license.txt" />
+    </Licenses>
+    <Default>true</Default>
+</Package>
