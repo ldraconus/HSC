@@ -24,18 +24,21 @@ SOURCES += \
     hsccharacter.cpp \
     main.cpp \
     mainwindow.cpp \
-    setupdialog.cpp
+    setupdialog.cpp \
+    simpledialog.cpp
 
 HEADERS += \
     ../../HSCCU/HSCCU/character.h \
     hsccharacter.h \
     mainwindow.h \
     setupdialog.h \
-    shared.h
+    shared.h \
+    simpledialog.h
 
 FORMS += \
     mainwindow.ui \
-    setupdialog.ui
+    setupdialog.ui \
+    simpledialog.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

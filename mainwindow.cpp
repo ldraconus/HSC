@@ -2,6 +2,8 @@
 #include "ui_mainwindow.h"
 #include "setupdialog.h"
 
+#include "simpledialog.h"
+
 #include "hsccharacter.h"
 #include "../../HSCCU/HSCCU/character.h"
 
@@ -14,6 +16,8 @@
 #include <QScrollArea>
 #include <QToolBar>
 #include <QVBoxLayout>
+
+MainWindow* MainWindow::ref;
 
 static QString strDamage(int str) {
     QString dice;
@@ -94,6 +98,7 @@ private:
         }
         return display;
     }
+
     QString getRoll(const QString& stat, int levels) {
         QString display;
         int prim = getPrimary(stat);
@@ -128,6 +133,7 @@ public:
         }
         return disad;
     }
+
     void load(QString f) {
         QDomDocument chr(f);
         QFile file(f);
@@ -138,6 +144,7 @@ public:
         }
         file.close();
     }
+
     QStringList martialArts() {
         QStringList ma;
         for (const auto& maneuver: character.martialArts.list) {
@@ -156,6 +163,7 @@ public:
         }
         return ma;
     }
+
     QStringList perks() {
         QStringList perks;
         for (const auto& perk: character.perks.list) {
@@ -173,6 +181,7 @@ public:
         }
         return perks;
     }
+
     QStringList powers() {
         QStringList powers;
         for (auto& item: character.powers.items) {
@@ -199,6 +208,7 @@ public:
         }
         return powers;
     }
+
     QStringList skills() {
         QStringList skills;
         for (const auto& skill: character.skills.list) {
@@ -214,6 +224,7 @@ public:
         }
         return skills;
     }
+
     QStringList talents() {
         QStringList talents;
         for (const auto& talent: character.talents.list) {
@@ -242,7 +253,6 @@ public:
     int         getPrimary(const QString& s)   { Characteristic c = character.characteristic(str2idx(s)); return c.base() + c.primary(); }
     int         getSecondary(const QString& s) { return character.characteristic(str2idx(s)).secondary(); }
     QByteArray  image()                        { return character.imageData(); }
-    void        load(QString f)                { character.load(opt, f); }
     QString     name()                         { return character.characterName(); }
 
     QStringList disadvantages() {
@@ -250,16 +260,24 @@ public:
         for (const auto& complication: character.complications()) disad.append(complication->description());
         return disad;
     }
+
     int getPrimaryResistant(const QString s) {
         if (s == "PD") return character.rPD();
         else if (s == "ED") return character.rED();
         return 0;
     }
+
     int getSecondaryResistant(const QString s) {
         if (s == "PD") return character.temprPD();
         else if (s == "ED") return character.temprED();
         return 0;
     }
+
+    void load(QString f) {
+        character.load(opt, f);
+        rebuildCharacter(character);
+    }
+
     QStringList martialArts() {
         QStringList ma;
         for (const auto& skl: character.skillsTalentsOrPerks()) {
@@ -295,6 +313,7 @@ public:
         }
         return ma;
     }
+
     QStringList perks() {
         QStringList perks;
         for (const auto& skl: character.skillsTalentsOrPerks()) {
@@ -303,6 +322,7 @@ public:
         }
         return perks;
     }
+
     QStringList powers() {
         QStringList powers;
         for (const auto& pwr: character.powersOrEquipment()) {
@@ -311,11 +331,121 @@ public:
                 QString descr;
                 pwr->display(descr);
                 QStringList x = descr.split('\n');
-                for (const auto& d: x) powers.append(d);
+                for (const auto& d: x) if (!x.isEmpty()) powers.append(d);
             }
         }
         return powers;
     }
+
+    void rebuildCharFromPowers(Character& character, QList<shared_ptr<Power>>& list) {
+        for (const auto& power: list) {
+            if (power == nullptr) continue;
+
+            if (power->name() == "Skill" && power->skill()->name() == "Combat Luck") {
+                if (power->skill()->place() == 1) {
+                    character.rPD() = character.rPD() + power->skill()->rPD();
+                    character.rED() = character.rED() + power->skill()->rED();
+                } else if (power->skill()->place() == 2){
+                    character.temprPD() = character.temprPD() + power->skill()->rPD();
+                    character.temprED() = character.temprED() + power->skill()->rED();
+                }
+            } else if (power->name() == "Barrier") {
+                if (power->place() == 1) {
+                    character.rPD() = character.rPD() + power->rPD();
+                    character.rED() = character.rED() + power->rED();
+                } else if (power->place() == 2) {
+                    character.temprPD() += power->rPD() + power->PD();
+                    character.temprED() += power->rED() + power->ED();
+                }
+            } else if (power->name() == "Flash Defense") {
+                character.FD() += power->FD();
+            }
+            else if (power->name() == "Mental Defense") {
+                character.MD() += power->MD();
+            }
+            else if (power->name() == "Power Defense") {
+                character.PowD() += power->PowD();
+            } else if (power->name() == "Density Increase") {
+                character.STR().secondary(character.STR().secondary() + power->str());
+                character.rPD() += power->rPD();
+                character.rED() += power->rED();
+                if (power->hasModifier("Nonresistant Defense")) {
+                    character.PD().secondary(character.PD().secondary() + power->PD());
+                    character.ED().secondary(character.ED().secondary() + power->ED());
+                }
+            } else if (power->name() == "Resistant Defense") {
+                if (power->place() == 1) {
+                    character.rPD() = character.rPD() + power->rPD() + power->PD();
+                    character.rED() = character.rED() + power->rED() + power->ED();
+                } else if (power->place() == 2) {
+                    character.temprPD() = character.temprPD() + power->rPD() + power->PD();
+                    character.temprED() = character.temprED() + power->rED() + power->ED();
+                }
+            } else if (power->name() == "Growth") {
+                auto& sm = power->growthStats();
+                character.STR().secondary(character.STR().secondary() + sm._STR);
+                character.CON().secondary(character.CON().secondary() + sm._CON);
+                character.PRE().secondary(character.PRE().secondary() + sm._PRE);
+                character.PD().secondary(character.PD().secondary() + sm._PD);
+                character.ED().secondary(character.ED().secondary() + sm._ED);
+                character.BODY().secondary(character.BODY().secondary() + sm._BODY);
+                character.STUN().secondary(character.STUN().secondary() + sm._STUN);
+                if (power->hasModifier("Resistant")) {
+                    character.rPD() += sm._PD;
+                    character.rED() += sm._ED;
+                }
+            } else if (power->name() == "Characteristics") {
+                int put = power->characteristic(-1);
+                if (put < 1) continue;
+                for (int i = 0; i < 17; ++i) {
+                    if (put == 1) character.characteristic(i).primary(character.characteristic(i).primary() + power->characteristic(i));
+                    else          character.characteristic(i).secondary(character.characteristic(i).secondary() + power->characteristic(i));
+                }
+                if (power->hasModifier("Resistant")) {
+                    if (put == 1) {
+                        character.rPD() += power->characteristic(11);
+                        character.rED() += power->characteristic(12);
+                    } else {
+                        character.temprPD() += power->characteristic(11);
+                        character.temprED() += power->characteristic(12);
+                    }
+                }
+            } else if (power->isFramework()) rebuildCharFromPowers(character, power->list());
+        }
+    }
+
+    void rebuildCharacter(Character& character) {
+        character.rPD() = 0;
+        character.rED() = 0;
+        character.temprPD() = 0;
+        character.temprED() = 0;
+        character.tempPD() = 0;
+        character.tempED() = 0;
+        character.FD() = 0;
+        character.MD() = 0;
+
+        for (const auto& skill: character.skillsTalentsOrPerks()) {
+            if (skill == nullptr) continue;
+
+            if (skill->name() == "Combat Luck") {
+                if (skill->place() == 1) {
+                    character.rPD() = character.rPD() + skill->rPD();
+                    character.rED() = character.rED() + skill->rED();
+                } else if (skill->place() == 2){
+                    character.temprPD() = character.temprPD() + skill->rPD();
+                    character.temprED() = character.temprED() + skill->rED();
+                }
+            }
+        }
+
+        for (int i = 0; i < 17; ++i) {
+            character.characteristic(i).primary(0);
+            character.characteristic(i).secondary(0);
+        }
+
+        rebuildCharFromPowers(character, character.powersOrEquipment());
+    }
+
     QStringList skills() {
         QStringList skills;
         for (const auto& skl: character.skillsTalentsOrPerks()) {
@@ -324,6 +454,7 @@ public:
         }
         return skills;
     }
+
     QStringList talents() {
         QStringList talents;
         for (const auto& skl: character.skillsTalentsOrPerks()) {
@@ -334,70 +465,13 @@ public:
     }
 };
 
-class simpleChar: public Char {
-private:
-    QString     charName;
-    int         dcv;
-    int         dex;
-    int         dmcv;
-    int         ed;
-    int         ocv;
-    int         omcv;
-    int         pd;
-    int         rEd;
-    int         rPd;
-    int         spd;
-    QStringList empty;
-    QByteArray  none;
-
-public:
-    virtual QStringList disadvantages()                        { return empty; }
-    virtual int         getSecondaryResistant(const QString s) { return getPrimaryResistant(s); }
-    virtual int         getSecondary(const QString& s)         { return getPrimary(s); }
-    virtual QByteArray  image()                                { return none; }
-    virtual QStringList martialArts()                          { return empty; }
-    virtual QString     name()                                 { return charName; }
-    virtual QStringList perks()                                { return empty; }
-    virtual QStringList powers()                               { return empty; }
-    virtual QStringList skills()                               { return empty; }
-    virtual QStringList talents()                              { return empty; }
-
-    virtual int  getPrimary(const QString& s) {
-        if (s == "DCV") return dcv;
-        else if (s == "DEX") return dex;
-        else if (s == "DMCV") return dmcv;
-        else if (s == "ED") return ed;
-        else if (s == "OCV") return ocv;
-        else if (s == "OMCV") return omcv;
-        else if (s == "PD") return pd;
-        else if (s == "SPD") return spd;
-        return 0;
-    }
-    virtual int  getPrimaryResistant(const QString s) {
-        if (s == "PD") return rPd;
-        else if (s == "ED") return rEd;
-        return 0;
-    };
-    virtual void load(QString s) {
-        QStringList data = s.split('\t');
-        charName = data[0];
-        dcv  = data[1].toInt();
-        dex  = data[2].toInt();
-        dmcv = data[3].toInt();
-        ed   = data[4].toInt();
-        ocv  = data[5].toInt();
-        omcv = data[6].toInt();
-        pd   = data[7].toInt();
-        rEd  = data[8].toInt();
-        rPd  = data[9].toInt();
-    }
-};
-
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+
+    ref = this;
 
     QAction* newAction = new QAction("New");
     QAction* loadAction = new QAction("Open");
@@ -1224,7 +1298,8 @@ void MainWindow::delay() {
 }
 
 void MainWindow::doNew() {
-    //
+    _simpleDlg = std::make_shared<SimpleDialog>();
+    _simpleDlg->open();
 }
 
 void MainWindow::itemSelected() {
@@ -1328,6 +1403,7 @@ void MainWindow::start() {
 
 void MainWindow::keyReleaseEvent(QKeyEvent* e) {
     static QKeyCombination Load(Qt::CTRL,   Qt::Key_L);
+    static QKeyCombination New(Qt::CTRL,    Qt::Key_N);
     static QKeyCombination Remove(Qt::CTRL, Qt::Key_R);
     static QKeyCombination Start(Qt::CTRL,  Qt::Key_S);
     static QKeyCombination Delay(Qt::CTRL,  Qt::Key_D);
@@ -1335,6 +1411,7 @@ void MainWindow::keyReleaseEvent(QKeyEvent* e) {
     static QKeyCombination Setup(Qt::ALT,   Qt::Key_S);
 
     if (e->keyCombination() == Load)        load();
+    else if (e->keyCombination() == New)    doNew();
     else if (e->keyCombination() == Remove) remove();
     else if (e->keyCombination() == Start)  start();
     else if (e->keyCombination() == Delay)  delay();

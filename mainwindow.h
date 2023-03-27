@@ -37,6 +37,10 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    static MainWindow* ref;
+
+    QMap<QString, std::shared_ptr<Char>>& characters() { return _characters; }
+
     int     OK(const char*, const char*);
     int     OKCancel(const char*, const char*);
     int     Question(const char*, const char*, QFlags<QMessageBox::StandardButton>);
@@ -97,6 +101,7 @@ private:
     int                                  _current = -1;
     int                                  _font = 9;
     int                                  _segment = -1;
+    std::shared_ptr<class SimpleDialog>  _simpleDlg;
 };
 
 #endif // MAINWINDOW_H
