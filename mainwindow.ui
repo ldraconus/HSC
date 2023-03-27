@@ -16,7 +16,7 @@
    </font>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>HeroSystem SpeedChart</string>
   </property>
   <property name="windowIcon">
    <iconset>
@@ -158,7 +158,7 @@ QHeaderView::section { background-color:lightgray; color: black; font: 700 9pt &
           <x>0</x>
           <y>0</y>
           <width>579</width>
-          <height>1093</height>
+          <height>903</height>
          </rect>
         </property>
         <layout class="QVBoxLayout" name="verticalLayout_2">

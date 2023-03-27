@@ -250,8 +250,6 @@ private:
     }
 
 public:
-    int         getPrimary(const QString& s)   { Characteristic c = character.characteristic(str2idx(s)); return c.base() + c.primary(); }
-    int         getSecondary(const QString& s) { return character.characteristic(str2idx(s)).secondary(); }
     QByteArray  image()                        { return character.imageData(); }
     QString     name()                         { return character.characterName(); }
 
@@ -271,6 +269,20 @@ public:
         if (s == "PD") return character.temprPD();
         else if (s == "ED") return character.temprED();
         return 0;
+    }
+
+    int getPrimary(const QString& s) {
+        if (s == "RUNNING") return 12;
+        else if (s == "LEAPING") return 4;
+        else if (s == "SWIMMING") return 4;
+        Characteristic c = character.characteristic(str2idx(s));
+        return c.base() + c.primary();
+    }
+    int getSecondary(const QString& s) {
+        if (s == "RUNNING") return character.running();
+        else if (s == "LEAPING") return character.leaping();
+        else if (s == "SWIMMING") return character.swimming();
+        return character.characteristic(str2idx(s)).secondary();
     }
 
     void load(QString f) {
@@ -414,6 +426,37 @@ public:
         }
     }
 
+    void rebuildMoveFromPowers(Character& character,
+                               QList<shared_ptr<Power>>& list,
+                               QMap<QString, int>& movements,
+                               QMap<QString, QString>& units,
+                               QMap<QString, int>& doubles) {
+        for (const auto& power: list) {
+            if (power == nullptr) continue;
+
+            if (power->name() == "Growth") {
+                auto& sm = power->growthStats();
+                character.running() += sm._running;
+            } else if (power->name() == "Running") {
+                character.running() += power->move();
+            } else if (power->name() == "Leaping") {
+                character.leaping() += power->move();
+            } else if (power->name() == "Swimming") {
+                character.swimming() += power->move();
+            } else if (power->name() == "FTL Travel" ||
+                       power->name() == "Flight" ||
+                       power->name() == "Swinging" ||
+                       power->name() == "Teleportation" ||
+                       power->name() == "Tunneling") {
+                movements[power->name()] += power->move();
+                units[power->name()] = power->units();
+                doubles[power->name()] = power->doubling();
+            } else if (power->isFramework()) {
+                rebuildMoveFromPowers(character, power->list(), movements, units, doubles);
+            }
+        }
+    }
+
     void rebuildCharacter(Character& character) {
         character.rPD() = 0;
         character.rED() = 0;
@@ -443,7 +486,16 @@ public:
             character.characteristic(i).secondary(0);
         }
 
+        character.running()  = 12;
+        character.leaping()  = 4;
+        character.swimming() = 4;
+
+        QMap<QString, int> movements;
+        QMap<QString, QString> units;
+        QMap<QString, int> doubles;
+
         rebuildCharFromPowers(character, character.powersOrEquipment());
+        rebuildMoveFromPowers(character, character.powersOrEquipment(), movements, units, doubles);
     }
 
     QStringList skills() {

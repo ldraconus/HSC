@@ -20,16 +20,16 @@ private:
     QByteArray  none;
 
 public:
-    virtual QStringList disadvantages()                        { return empty; }
-    virtual int         getSecondaryResistant(const QString s) { return 0; }
-    virtual int         getSecondary(const QString& s)         { return 0; }
-    virtual QByteArray  image()                                { return none; }
-    virtual QStringList martialArts()                          { return empty; }
-    virtual QString     name()                                 { return charName; }
-    virtual QStringList perks()                                { return empty; }
-    virtual QStringList powers()                               { return empty; }
-    virtual QStringList skills()                               { return empty; }
-    virtual QStringList talents()                              { return empty; }
+    virtual QStringList disadvantages()                      { return empty; }
+    virtual int         getSecondaryResistant(const QString) { return 0; }
+    virtual int         getSecondary(const QString&)         { return 0; }
+    virtual QByteArray  image()                              { return none; }
+    virtual QStringList martialArts()                        { return empty; }
+    virtual QString     name()                               { return charName; }
+    virtual QStringList perks()                              { return empty; }
+    virtual QStringList powers()                             { return empty; }
+    virtual QStringList skills()                             { return empty; }
+    virtual QStringList talents()                            { return empty; }
 
     virtual int  getPrimary(const QString& s) {
         if (s == "DCV") return dcv;
