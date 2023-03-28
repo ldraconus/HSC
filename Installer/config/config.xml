@@ -6,6 +6,10 @@
     <Publisher>SoftwareOnHand</Publisher>
     <StartMenuDir>HeroSystem SpeedChart</StartMenuDir>
     <TargetDir>@ApplicationsDirX64@/HeroSystem-SpeedChart</TargetDir>
-        <RunProgram>@TargetDir@/HeroSystem SpeedChart</RunProgram>
-        <RunProgramDescription>Run "HeroSystem SpeedChart"</RunProgramDescription>
+    <RunProgram>@TargetDir@/HeroSystem SpeedChart</RunProgram>
+    <RunProgramDescription>Run "HeroSystem SpeedChart"</RunProgramDescription>
+    <Background>background.png</Background>
+    <WizardStyle>Mac</WizardStyle>
+    <WizardShowPageList>false</WizardShowPageList>
+    <StyleSheet>Style.qss</StyleSheet>
 </Installer>

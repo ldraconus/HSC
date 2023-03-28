@@ -49,6 +49,11 @@ DISTFILES += \
     ../Installer/config/config.xml \
     ../Installer/packages/com.vendor.product/meta/license.txt \
     ../Installer/packages/com.vendor.product/meta/package.xml \
+    Installer/config/Style.qss \
+    Installer/config/background.png \
+    Installer/config/config.xml \
+    Installer/packages/com.vendor.product/meta/license.txt \
+    Installer/packages/com.vendor.product/meta/package.xml \
     android/AndroidManifest.xml \
     android/build.gradle \
     android/gradle.properties \
