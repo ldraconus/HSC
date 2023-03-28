@@ -96,4 +96,7 @@ void SimpleDialog::ok() {
     MainWindow::ref->displayCharacter(name);
 }
 
-std::shared_ptr<class Char> Sinpleload(QJsonObject&);
+std::shared_ptr<class Char> SimpleDialog::create() {
+    std::shared_ptr<Char> character = std::make_shared<simpleChar>();
+    return character;
+}

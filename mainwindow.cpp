@@ -12,6 +12,9 @@
 #include <QAction>
 #include <QFileDialog>
 #include <QKeyEvent>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMessageBox>
 #include <QScrollArea>
 #include <QStandardPaths>
@@ -1399,12 +1402,37 @@ void MainWindow::load() {
 #else
     QStringList files = QFileDialog::getOpenFileNames(this, "Import Character file(s)", _dir, "Hero System Character(s) (*.hdc *.hsccu *.hsc)");
     if (files.isEmpty()) return;
-    for (const auto& filename: files) {
+    for (auto filename: files) {
 #endif
         std::shared_ptr<Char> character;
         if (filename.endsWith(".hdc")) character = make_shared<hscChar>();
-        else if (filename.endsWith(".hsscu")) character = make_shared<hsccuChar>();
+        else if (filename.endsWith(".hsccu")) character = make_shared<hsccuChar>();
         else {
+            QFile file(filename);
+            if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+
+            QByteArray data(file.readAll());
+            file.close();
+
+            QString jsonStr(data);
+            QJsonDocument json = QJsonDocument::fromJson(jsonStr.toUtf8());
+            QJsonArray fileList = json["files"].toArray();
+            for (int i = 0; i < fileList.count(); ++i) {
+                if (fileList[i].isString()) {
+                    filename = fileList[i].toString();
+                    if (filename.endsWith(".hdc")) character = make_shared<hscChar>();
+                    else character = make_shared<hsccuChar>();
+                }
+                else {
+                    QJsonObject obj = fileList[i].toObject();
+                    filename = obj["name"].toString() + "," + obj["dcv"].toString() + "," + obj["dex"].toString() + "," +
+                               obj["dmcv"].toString() + "," + obj["ed"].toString()  + "," + obj["ocv"].toString() + "," +
+                               obj["omcv"].toString() + "," + obj["pd"].toString()  + "," + obj["rEd"].toString() + "," +
+                               obj["rPd"].toString()  + "," + obj["spd"].toString();
+                    character = SimpleDialog::create();
+                }
+                load(character, filename);
+            }
             continue;
         }
         load(character, filename);
@@ -1460,11 +1488,40 @@ void MainWindow::remove() {
 
 #ifndef __wasm__
 void MainWindow::save() {
-    // get a save file from the user
-    // go through all of the characters:
-    //   write the path for characters that have a non-empty one
-    //   else write the simple character to the save-file
-    // success!!
+    QString filename = QFileDialog::getSaveFileName(this, "Export SpeedChart", _dir, "Hero System SpeedChart (*.hsc)");
+    if (filename.isEmpty()) return;
+
+    QJsonDocument json;
+    QJsonObject top;
+    QJsonArray files;
+    QStringList keys = _characters.keys();
+    for (const auto& name: keys) {
+        QString filename = _characters[name]->path();
+        if (filename.isEmpty()) {
+            QJsonObject obj;
+            std::shared_ptr<Char> chr = _characters[name];
+            obj["name"] = chr->name();
+            obj["dcv"]  = chr->getPrimary("DCV");
+            obj["dex"]  = chr->getPrimary("DEX");
+            obj["dmcv"] = chr->getPrimary("DMCV");
+            obj["ed"]   = chr->getPrimary("ED");
+            obj["ocv"]  = chr->getPrimary("OCV");
+            obj["omcv"] = chr->getPrimary("OMCV");
+            obj["pd"]   = chr->getPrimary("PD");
+            obj["rEd"]  = chr->getPrimaryResistant("ED");
+            obj["rPd"]  = chr->getPrimaryResistant("PD");
+            obj["spd"]  = chr->getPrimary("SPD");
+            files.append(obj);
+        } else files.append(filename);
+    }
+    top["files"] = files;
+    json.setObject(top);
+
+    QFile file(filename);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) return;
+    QTextStream out(&file);
+    out << json.toJson();
+    file.close();
 }
 #endif
 

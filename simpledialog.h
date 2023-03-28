@@ -2,7 +2,6 @@
 #define SIMPLEDIALOG_H
 
 #include <QDialog>
-#include <QJsonObject>
 
 namespace Ui {
 class SimpleDialog;
@@ -16,7 +15,7 @@ public:
     explicit SimpleDialog(QWidget *parent = nullptr);
     ~SimpleDialog();
 
-    static std::shared_ptr<class Char> load(QJsonObject&);
+    static std::shared_ptr<class Char> create();
 
 private:
     Ui::SimpleDialog *ui;
